@@ -1,1 +1,1 @@
-ExUnit.start()
+ExUnit.start(exclude: [:cider_full])
