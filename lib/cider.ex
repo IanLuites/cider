@@ -4,87 +4,211 @@ defmodule Cider do
   """
 
   if :erlang.system_info(:wordsize) < 8,
-    do: raise "Cider: 32-bit Architecture not supported."
+    do: raise("Cider: 32-bit Architecture not supported.")
+
+  @default_mask [
+    ipv4: 32,
+    ipv6: 128
+  ]
 
   @typedoc "A cidr made out of {`ip`, `subnet_mask`}."
   @type t :: {integer, integer}
   @typedoc "A tuple with each octet of the ip."
-  @type ip :: {integer, integer, integer, integer}
-
+  @type ip ::
+          {integer, integer, integer, integer}
+          | {integer, integer, integer, integer, integer, integer, integer, integer}
+  @type raw_ip :: integer
   @doc ~S"""
   Parses a CIDR in list representation.
   The first 4 items are the octets of the ip.
-  THe last item is the bit mask.
+  The last item is the bit mask.
 
-  Example:
-      iex> Cider.parse 192, 168, 0, 0, 24
-      {3232235520, 4294967040}
+  ## Examples
+
+  ```elixir
+  iex> Cider.parse 192, 168, 0, 0, 24
+  {3232235520, 4294967040}
+  ```
   """
-  @spec parse(integer, integer, integer, integer, integer) :: t
-  def parse(a, b, c, d, bit_mask \\ 32) do
+  @spec parse(integer, integer, integer, integer, integer | nil) :: t
+  def parse(a, b, c, d, bit_mask \\ nil) do
     parse({a, b, c, d}, bit_mask)
   end
 
   @doc ~S"""
   Parses a CIDR in string representation.
 
-  Example:
-      iex> Cider.parse "192.168.0.0/24"
-      {3232235520, 4294967040}
+  ## Examples
+  ```elixir
+  iex> Cider.parse "192.168.0.0/24"
+  {3232235520, 4294967040}
+  ```
   """
-  @spec parse(String.t) :: t
+  @spec parse(String.t()) :: t
   def parse(cidr) do
-    :erlang.apply Cider,
-                  :parse,
-                  cidr
-                  |> String.split(~r/\.|\//)
-                  |> Enum.map(&String.to_integer/1)
+    [ip | mask] = String.split(cidr, "/")
+    {:ok, ip_tuple} = ip |> String.to_charlist() |> :inet.parse_address()
+    mask = if mask == [], do: nil, else: mask |> List.first() |> String.to_integer()
+
+    parse(ip_tuple, mask)
   end
 
   @doc ~S"""
-  Creates a CIDR based on an ip and bit mask.
+  Creates a CIDR based on an ip and bit_mask.
 
   The ip is represented by an octet tuple.
 
-  Example:
-      iex> Cider.parse {192, 168, 0, 0}, 24
-      {3232235520, 4294967040}
+  ## Examples
+
+  ```elixir
+  iex> Cider.parse {192, 168, 0, 0}, 24
+  {3232235520, 4294967040}
+  ```
   """
-  @spec parse(ip, integer) :: t
+  @spec parse(ip, integer | nil) :: t
   def parse(ip, bit_mask) do
-    ip = ip_to_int(ip)
-    subnet_mask = create_mask(bit_mask)
+    {ip, format} = ip_to_int(ip)
+    subnet_mask = create_mask(bit_mask || @default_mask[format], format)
 
     {:erlang.band(ip, subnet_mask), subnet_mask}
   end
 
   @doc ~S"""
   Checks whether a given `ip` falls within a `cidr` range.
+
+  ## Example
+  ```elixir
+  iex> Cider.contains?({192, 168, 0, 1}, Cider.parse({192, 168, 0, 0}, 24))
+  true
+  iex> Cider.contains?({192, 168, 254, 1}, Cider.parse({192, 168, 0, 0}, 24))
+  false
+  ```
   """
-  @spec contains?(ip, t) :: boolean
+  @spec contains?(ip | raw_ip, t) :: boolean
+  def contains?(ip, {cidr, subnet_mask}) when is_integer(ip) do
+    ip
+    |> :erlang.band(subnet_mask)
+    |> :erlang.bxor(cidr) == 0
+  end
+
   def contains?(ip, {cidr, subnet_mask}) do
-    (
-      ip
-      |> ip_to_int()
-      |> :erlang.band(subnet_mask)
-      |> :erlang.bxor(cidr)
-    ) == 0
+    ip
+    |> ip_to_int()
+    |> elem(0)
+    |> :erlang.band(subnet_mask)
+    |> :erlang.bxor(cidr) == 0
   end
 
-  @spec ip_to_int(ip) :: integer
+  @doc ~S"""
+  Returns the raw numeric IP.
+
+  ## Examples
+  ```elixir
+  iex> Cider.ip!("192.168.1.1")
+  3_232_235_777
+  ```
+  """
+  @spec ip!(binary | tuple) :: raw_ip | no_return
+  def ip!(ip) when is_binary(ip) do
+    {:ok, ip} = ip |> String.to_charlist() |> :inet.parse_address()
+    ip |> ip_to_int() |> elem(0)
+  end
+
+  def ip!(ip) do
+    ip |> ip_to_int() |> elem(0)
+  end
+
+  @spec ip_to_int(ip) :: {raw_ip, :ipv4 | :ipv6}
+  defp ip_to_int({a, b, c, d, e, f, g, h}) do
+    {
+      h
+      |> :erlang.bor(:erlang.bsl(g, 16))
+      |> :erlang.bor(:erlang.bsl(f, 32))
+      |> :erlang.bor(:erlang.bsl(e, 48))
+      |> :erlang.bor(:erlang.bsl(d, 64))
+      |> :erlang.bor(:erlang.bsl(c, 80))
+      |> :erlang.bor(:erlang.bsl(b, 96))
+      |> :erlang.bor(:erlang.bsl(a, 112)),
+      :ipv6
+    }
+  end
+
   defp ip_to_int({a, b, c, d}) do
-    d
-    |> :erlang.bor(:erlang.bsl(c, 8))
-    |> :erlang.bor(:erlang.bsl(b, 16))
-    |> :erlang.bor(:erlang.bsl(a, 24))
+    {
+      d
+      |> :erlang.bor(:erlang.bsl(c, 8))
+      |> :erlang.bor(:erlang.bsl(b, 16))
+      |> :erlang.bor(:erlang.bsl(a, 24)),
+      :ipv4
+    }
   end
 
-  @spec create_mask(integer) :: integer
-  defp create_mask(bit_mask) do
+  @spec create_mask(integer, :ipv4 | :ipv6) :: integer
+  defp create_mask(bit_mask, :ipv4) do
     shift = 32 - bit_mask
 
-    4_294_967_295 # 0xffffffff (32 bits)
+    # 0xffffffff (32 bits)
+    4_294_967_295
     |> :erlang.bsr(shift)
     |> :erlang.bsl(shift)
+  end
+
+  defp create_mask(bit_mask, :ipv6) do
+    shift = 128 - bit_mask
+
+    # 0xf..f (128 bits)
+    340_282_366_920_938_463_463_374_607_431_768_211_455
+    |> :erlang.bsr(shift)
+    |> :erlang.bsl(shift)
+  end
+
+  ### Convenience ###
+
+  @doc ~S"""
+  Convert a tuple or numeric IP to string.
+
+  ## Examples
+
+  ```elixir
+  iex> Cider.to_string({192, 168, 1, 1})
+  "192.168.1.1"
+  ```
+  """
+  @spec to_string(tuple | integer) :: String.t()
+  def to_string({a, b, c, d}), do: "#{a}.#{b}.#{c}.#{d}"
+
+  def to_string(ip) when is_tuple(ip) do
+    ip
+    |> Tuple.to_list()
+    |> Enum.map(&Integer.to_string(&1, 16))
+    |> Enum.join(":")
+  end
+
+  def to_string(ip) do
+    if ip <= 4_294_967_295 do
+      1..4
+      |> Enum.reduce({ip, []}, &ip_reduce_ipv4/2)
+      |> elem(1)
+      |> Enum.join(".")
+    else
+      1..8
+      |> Enum.reduce({ip, []}, &ip_reduce_ipv6/2)
+      |> elem(1)
+      |> Enum.join(":")
+    end
+  end
+
+  defp ip_reduce_ipv4(_, {ip, acc}) do
+    {
+      :erlang.bsr(ip, 8),
+      [:erlang.band(ip, 255) | acc]
+    }
+  end
+
+  defp ip_reduce_ipv6(_, {ip, acc}) do
+    {
+      :erlang.bsr(ip, 16),
+      [Integer.to_string(:erlang.band(ip, 65_535), 16) | acc]
+    }
   end
 end
