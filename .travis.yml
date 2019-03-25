@@ -8,6 +8,8 @@ install:
   - mix local.rebar --force
   - mix local.hex --force
   - mix deps.get
+script:
+  - mix analyze --non-interactive
 after_script:
   - MIX_ENV=test mix do deps.get, compile, coveralls.travis
 cache:
