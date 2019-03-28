@@ -1,20 +1,17 @@
 sudo: false
 language: elixir
 elixir:
-  - 1.4.0
-  - 1.4.1
-  - 1.4.2
+  - 1.8.1
 otp_release:
-  - 19.0
-  - 19.1
-  - 19.2
-  - 19.3
+  - 21.3
 install:
-  - mix local.rebar --force # for Elixir 1.3.0 and up
+  - mix local.rebar --force
   - mix local.hex --force
   - mix deps.get
+script:
+  - mix analyze --non-interactive
 after_script:
-  - MIX_ENV=test mix do deps.get, compile, inch.report, coveralls.travis
+  - MIX_ENV=test mix do deps.get, compile, coveralls.travis
 cache:
   directories:
     - _build

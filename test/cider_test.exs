@@ -4,27 +4,27 @@ defmodule CiderTest do
 
   describe "parse" do
     test "from string with subnetmask" do
-      assert Cider.parse("192.168.0.0/24") == {3232235520, 4294967040}
+      assert Cider.parse("192.168.0.0/24") == {3_232_235_520, 4_294_967_040}
     end
 
     test "from string without subnetmask" do
-      assert Cider.parse("192.168.0.1") == {3232235521, 4294967295}
+      assert Cider.parse("192.168.0.1") == {3_232_235_521, 4_294_967_295}
     end
 
     test "from arguments with subnetmask" do
-      assert Cider.parse(192, 168, 0, 0, 24) == {3232235520, 4294967040}
+      assert Cider.parse(192, 168, 0, 0, 24) == {3_232_235_520, 4_294_967_040}
     end
 
     test "from arguments without subnetmask" do
-      assert Cider.parse(192, 168, 0, 1) == {3232235521, 4294967295}
+      assert Cider.parse(192, 168, 0, 1) == {3_232_235_521, 4_294_967_295}
     end
 
     test "from ip and subnetmask" do
-      assert Cider.parse({192, 168, 0, 0}, 24) == {3232235520, 4294967040}
+      assert Cider.parse({192, 168, 0, 0}, 24) == {3_232_235_520, 4_294_967_040}
     end
 
     test "from ip and subnetmask with non %8 bit mask" do
-      assert Cider.parse({192, 168, 0, 0}, 3) == {3221225472, 3758096384}
+      assert Cider.parse({192, 168, 0, 0}, 3) == {3_221_225_472, 3_758_096_384}
     end
   end
 
@@ -45,14 +45,26 @@ defmodule CiderTest do
 
     @tag :cider_full
     test "correct for whole ip range" do
-      cidr = Cider.parse "192.168.0.0/24"
+      cidr = Cider.parse("192.168.0.0/24")
 
-      for octet1 <- 191..193, do:
-        for octet2 <- 0..255,  do:
-          for octet3 <- 0..255, do:
-            for octet4 <- 0..255, do:
-              assert Cider.contains?({octet1, octet2, octet3, octet4}, cidr)
-                      == (octet1 == 192 && octet2 == 168 && octet3 == 0)
+      for octet1 <- 191..193,
+          do:
+            for(
+              octet2 <- 0..255,
+              do:
+                for(
+                  octet3 <- 0..255,
+                  do:
+                    for(
+                      octet4 <- 0..255,
+                      do:
+                        assert(
+                          Cider.contains?({octet1, octet2, octet3, octet4}, cidr) ==
+                            (octet1 == 192 && octet2 == 168 && octet3 == 0)
+                        )
+                    )
+                )
+            )
     end
   end
 end
