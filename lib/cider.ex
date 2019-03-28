@@ -63,6 +63,8 @@ defmodule Cider do
   ```elixir
   iex> Cider.parse {192, 168, 0, 0}, 24
   {3232235520, 4294967040}
+  iex> Cider.parse {0, 0, 0, 0, 0, 65535, 49320, 10754}, 128
+  {281473913989634, 340282366920938463463374607431768211455}
   ```
   """
   @spec parse(ip, integer | nil) :: t
@@ -79,6 +81,8 @@ defmodule Cider do
   ## Example
   ```elixir
   iex> Cider.contains?({192, 168, 0, 1}, Cider.parse({192, 168, 0, 0}, 24))
+  true
+  iex> Cider.contains?(3232235520, Cider.parse({192, 168, 0, 0}, 24))
   true
   iex> Cider.contains?({192, 168, 254, 1}, Cider.parse({192, 168, 0, 0}, 24))
   false
@@ -105,6 +109,8 @@ defmodule Cider do
   ## Examples
   ```elixir
   iex> Cider.ip!("192.168.1.1")
+  3_232_235_777
+  iex> Cider.ip!({192, 168, 1, 1})
   3_232_235_777
   ```
   """
@@ -172,6 +178,12 @@ defmodule Cider do
   ```elixir
   iex> Cider.to_string({192, 168, 1, 1})
   "192.168.1.1"
+  iex> Cider.to_string(3_232_235_777)
+  "192.168.1.1"
+  iex> Cider.to_string({0, 0, 0, 0, 0, 65535, 49320, 10754})
+  "0:0:0:0:0:FFFF:C0A8:2A02"
+  iex> Cider.to_string(281_473_913_989_634)
+  "0:0:0:0:0:FFFF:C0A8:2A02"
   ```
   """
   @spec to_string(tuple | integer) :: String.t()
