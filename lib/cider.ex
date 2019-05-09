@@ -12,12 +12,16 @@ defmodule Cider do
   ]
 
   @typedoc "A cidr made out of {`ip`, `subnet_mask`}."
-  @type t :: {integer, integer}
+  @type t :: {integer, integer} | Range.t()
+
   @typedoc "A tuple with each octet of the ip."
   @type ip ::
           {integer, integer, integer, integer}
           | {integer, integer, integer, integer, integer, integer, integer, integer}
+
+  @typedoc ~S"An IP represented as integer"
   @type raw_ip :: integer
+
   @doc ~S"""
   Parses a CIDR in list representation.
   The first 4 items are the octets of the ip.
@@ -39,18 +43,34 @@ defmodule Cider do
   Parses a CIDR in string representation.
 
   ## Examples
+
   ```elixir
   iex> Cider.parse "192.168.0.0/24"
   {3232235520, 4294967040}
   ```
+
+  ```elixir
+  iex> Cider.parse "192.168.0.1-24"
+  3232235521..3232235544
+  ```
   """
   @spec parse(String.t()) :: t
   def parse(cidr) do
-    [ip | mask] = String.split(cidr, "/")
-    {:ok, ip_tuple} = ip |> String.to_charlist() |> :inet.parse_address()
-    mask = if mask == [], do: nil, else: mask |> List.first() |> String.to_integer()
+    if String.contains?(cidr, "-") do
+      [ip, range] = String.split(cidr, "-")
+      range = String.to_integer(range)
 
-    parse(ip_tuple, mask)
+      case ip |> String.to_charlist() |> :inet.parse_address() do
+        {:ok, ip = {a, b, c, _}} -> ip!(ip)..ip!({a, b, c, range})
+        {:ok, ip = {a, b, c, d, e, f, g, _}} -> ip!(ip)..ip!({a, b, c, d, e, f, g, range})
+      end
+    else
+      [ip | mask] = String.split(cidr, "/")
+      {:ok, ip_tuple} = ip |> String.to_charlist() |> :inet.parse_address()
+      mask = if mask == [], do: nil, else: mask |> List.first() |> String.to_integer()
+
+      parse(ip_tuple, mask)
+    end
   end
 
   @doc ~S"""
@@ -95,13 +115,9 @@ defmodule Cider do
     |> :erlang.bxor(cidr) == 0
   end
 
-  def contains?(ip, {cidr, subnet_mask}) do
-    ip
-    |> ip_to_int()
-    |> elem(0)
-    |> :erlang.band(subnet_mask)
-    |> :erlang.bxor(cidr) == 0
-  end
+  def contains?(ip, range = _.._) when is_integer(ip), do: ip in range
+
+  def contains?(ip, match), do: ip |> ip!() |> contains?(match)
 
   @doc ~S"""
   Returns the raw numeric IP.

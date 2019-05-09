@@ -11,6 +11,15 @@ defmodule CiderTest do
       assert Cider.parse("192.168.0.1") == {3_232_235_521, 4_294_967_295}
     end
 
+    test "from string with range" do
+      assert Cider.parse("192.168.0.1-23") == 3_232_235_521..3_232_235_543
+    end
+
+    test "from string with range (ipv6)" do
+      assert Cider.parse("2001:0db8:85a3:0000:0000:8a2e:0370:7334-8000") ==
+               42_540_766_452_641_154_071_740_215_577_757_643_572..42_540_766_452_641_154_071_740_215_577_757_622_080
+    end
+
     test "from arguments with subnetmask" do
       assert Cider.parse(192, 168, 0, 0, 24) == {3_232_235_520, 4_294_967_040}
     end
@@ -41,6 +50,18 @@ defmodule CiderTest do
 
       assert Cider.contains?({192, 168, 0, 5}, cidr)
       refute Cider.contains?({192, 168, 0, 4}, cidr)
+    end
+
+    test "with full range bit mask" do
+      cidr = Cider.parse("192.168.0.3-12")
+
+      refute Cider.contains?({192, 168, 0, 2}, cidr)
+
+      Enum.each(3..12, fn last ->
+        assert Cider.contains?({192, 168, 0, last}, cidr)
+      end)
+
+      refute Cider.contains?({192, 168, 0, 13}, cidr)
     end
 
     @tag :cider_full
