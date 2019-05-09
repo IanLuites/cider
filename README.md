@@ -9,6 +9,13 @@
 
 CIDR library for Elixer.
 
+## Quick Start
+
+```elixir
+whitelist = Cider.whitelist("192.168.0.1-3, 192.168.2.0/24, ::1")
+Cider.whitelisted?("192.168.0.2", whitelist) # true
+```
+
 ## Installation
 
 The package can be installed
@@ -16,6 +23,14 @@ by adding `cider` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
-  [{:cider, "~> 0.1.0"}]
+  [{:cider, "~> 0.3.0"}]
 end
 ```
+
+## Changelog
+
+### v0.3.0 (2019-05-09)
+
+- Add ability to define ranges: `192.168.0.1-43`.
+- Add function to create whitelist: `Cider.whitelist/1`.
+- Add function to match IP to whitelist: `Cider.whitelisted?/2`.
