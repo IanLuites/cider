@@ -88,4 +88,51 @@ defmodule CiderTest do
             )
     end
   end
+
+  describe "whitelist/1" do
+    test "from single string" do
+      assert Cider.whitelist("192.168.0.1-32, 192.168.1.0/24     ::1") ==
+               {:ok,
+                [
+                  {1, 340_282_366_920_938_463_463_374_607_431_768_211_455},
+                  {3_232_235_776, 4_294_967_040},
+                  3_232_235_521..3_232_235_552
+                ]}
+    end
+
+    test "from mixed list" do
+      assert Cider.whitelist([Cider.parse("192.168.0.1-32"), Cider.parse("192.168.1.0/24"), "::1"]) ==
+               {:ok,
+                [
+                  {1, 340_282_366_920_938_463_463_374_607_431_768_211_455},
+                  {3_232_235_776, 4_294_967_040},
+                  3_232_235_521..3_232_235_552
+                ]}
+    end
+  end
+
+  describe "whitelisted?/2" do
+    setup do
+      {:ok, whitelist} = Cider.whitelist("192.168.0.1-32, 192.168.1.0/24")
+      [whitelist: whitelist]
+    end
+
+    test "based on string IP", %{whitelist: whitelist} do
+      assert Cider.whitelisted?("192.168.0.23", whitelist)
+      assert Cider.whitelisted?("192.168.1.23", whitelist)
+      refute Cider.whitelisted?("192.168.2.23", whitelist)
+    end
+
+    test "based on tuple IP", %{whitelist: whitelist} do
+      assert Cider.whitelisted?({192, 168, 0, 23}, whitelist)
+      assert Cider.whitelisted?({192, 168, 1, 23}, whitelist)
+      refute Cider.whitelisted?({192, 168, 2, 23}, whitelist)
+    end
+
+    test "based on integer IP", %{whitelist: whitelist} do
+      assert Cider.whitelisted?(3_232_235_543, whitelist)
+      assert Cider.whitelisted?(3_232_235_799, whitelist)
+      refute Cider.whitelisted?(3_232_236_055, whitelist)
+    end
+  end
 end

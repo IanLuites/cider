@@ -239,4 +239,68 @@ defmodule Cider do
       [Integer.to_string(:erlang.band(ip, 65_535), 16) | acc]
     }
   end
+
+  ### Whitelisting ###
+
+  @doc ~S"""
+  Generate an IP whitelist.
+
+
+  ## Examples
+
+  ```elixir
+  iex> Cider.whitelist("192.168.0.1-3, 192.168.1.0/32")
+  {:ok, [{3232235776, 4294967295}, 3232235521..3232235523]}
+  ```
+  """
+  @spec whitelist(String.t() | [String.t() | t]) :: {:ok, [t]} | {:error, atom}
+  def whitelist(whitelist) when is_binary(whitelist) do
+    whitelist
+    |> String.split(~r/(,| )\ */, trim: true)
+    |> do_whitelist()
+  end
+
+  def whitelist(ips) when is_list(ips), do: do_whitelist(ips)
+  def whitelist(_), do: {:error, :invalid_whitelist}
+
+  @spec do_whitelist([String.t() | t]) :: {:ok, [t]} | {:error, atom}
+  defp do_whitelist(ips, acc \\ [])
+  defp do_whitelist([], acc), do: {:ok, acc}
+  defp do_whitelist([ip = {_, _} | ips], acc), do: do_whitelist(ips, [ip | acc])
+  defp do_whitelist([ip = _.._ | ips], acc), do: do_whitelist(ips, [ip | acc])
+
+  defp do_whitelist([ip | ips], acc) do
+    do_whitelist(ips, [parse(ip) | acc])
+  rescue
+    _ -> {:error, :invalid_whitelist_cidr}
+  end
+
+  @doc ~S"""
+  Check whether a given IP is whitelisted.
+
+  An empty whitelist will always return `false`.
+
+  ## Examples
+
+  ```elixir
+  iex> Cider.whitelisted?("192.168.0.2", "192.168.0.1-3, 192.168.1.0/24")
+  true
+  iex> Cider.whitelisted?("192.168.1.2", "192.168.0.1-3, 192.168.1.0/24")
+  true
+  iex> Cider.whitelisted?("192.168.2.2", "192.168.0.1-3, 192.168.1.0/24")
+  false
+  ```
+  """
+  @spec whitelisted?(String.t() | ip | raw_ip, String.t() | [t]) :: boolean
+  def whitelisted?(ip, whitelist) when is_binary(whitelist) do
+    case whitelist(whitelist) do
+      {:ok, wl} -> whitelisted?(ip, wl)
+      _ -> false
+    end
+  end
+
+  def whitelisted?(ip, whitelist) when is_integer(ip),
+    do: Enum.find_value(whitelist, false, &Cider.contains?(ip, &1))
+
+  def whitelisted?(ip, whitelist), do: ip |> ip! |> whitelisted?(whitelist)
 end
