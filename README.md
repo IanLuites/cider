@@ -12,9 +12,25 @@ CIDR library for Elixer.
 ## Quick Start
 
 ```elixir
-whitelist = Cider.whitelist("192.168.0.1-3, 192.168.2.0/24, ::1")
+{:ok, whitelist} = Cider.whitelist("192.168.0.1-3, 192.168.2.0/24, ::1")
 Cider.whitelisted?("192.168.0.2", whitelist) # true
 ```
+
+```elixir
+Cider.optimize!("192.168.0.0/31, 192.168.0.2-3")  |> Cider.to_string
+"192.168.0.0/30"```
+
+```elixir
+Cider.optimize("192.168.0.0/31, 192.168.0.2-4") |> Cider.to_string
+"192.168.0.0-4"```
+
+```elixir
+Cider.optimize("192.168.0.0-5, 192.168.0.2-3, 192.168.0.4-255") |> Cider.to_string
+"192.168.0.0/24"```
+
+```elixir
+Cider.optimize("192.168.0.0-5, 192.168.0.2-3, 192.168.0.4-127") |> Cider.to_string
+"192.168.0.0/25"```
 
 ## Installation
 
@@ -28,6 +44,11 @@ end
 ```
 
 ## Changelog
+
+### v0.3.1 (2019-05-10)
+
+- Add function to optimize whitelists. (`Cider.optimize/1`)
+- Add ability to `to_string` to print whitelists.
 
 ### v0.3.0 (2019-05-09)
 
