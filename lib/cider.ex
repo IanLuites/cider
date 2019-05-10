@@ -205,6 +205,10 @@ defmodule Cider do
   @spec to_string(tuple | integer) :: String.t()
   def to_string({a, b, c, d}), do: "#{a}.#{b}.#{c}.#{d}"
 
+  def to_string({ip, mask}) do
+    Cider.to_string(ip) <> "/" <> mask_to_string(mask)
+  end
+
   def to_string(ip) when is_tuple(ip) do
     ip
     |> Tuple.to_list()
@@ -212,7 +216,7 @@ defmodule Cider do
     |> Enum.join(":")
   end
 
-  def to_string(ip) do
+  def to_string(ip) when is_integer(ip) do
     if ip <= 4_294_967_295 do
       1..4
       |> Enum.reduce({ip, []}, &ip_reduce_ipv4/2)
@@ -224,6 +228,22 @@ defmodule Cider do
       |> elem(1)
       |> Enum.join(":")
     end
+  end
+
+  def to_string(whitelist) when is_list(whitelist) do
+    whitelist
+    |> Enum.map(&Cider.to_string/1)
+    |> Enum.join(", ")
+  end
+
+  def to_string(a..b) do
+    part =
+      b
+      |> Cider.to_string()
+      |> String.split(~r/(:|\.)/)
+      |> List.last()
+
+    Cider.to_string(a) <> "-#{part}"
   end
 
   defp ip_reduce_ipv4(_, {ip, acc}) do
@@ -303,4 +323,155 @@ defmodule Cider do
     do: Enum.find_value(whitelist, false, &Cider.contains?(ip, &1))
 
   def whitelisted?(ip, whitelist), do: ip |> ip! |> whitelisted?(whitelist)
+
+  @doc ~S"""
+  Optimize a Cider whitelist by merging overlapping CIDR.
+
+  See: `optimize/1`.
+
+  ## Example
+  ```elixir
+  iex> optimized = Cider.optimize!("192.168.0.1-5, 192.168.0.10-20, 192.168.1.1/16, 192.168.0.6-9, 192.168.0.1/24")
+  iex> Cider.to_string(optimized)
+  "192.168.0.0/16"
+  ```
+
+  """
+  @spec optimize!(String.t() | list) :: [t]
+  def optimize!(whitelist) do
+    case optimize(whitelist) do
+      {:ok, wl} -> wl
+      {:error, reason} -> raise "Failed to optimize whitelist. (#{reason})"
+    end
+  end
+
+  @doc ~S"""
+  Optimize a Cider whitelist by merging overlapping CIDR.
+
+  ## Examples
+
+  ```elixir
+  iex> {:ok, optimized} = Cider.optimize("192.168.0.1-5, 192.168.0.10-20, 192.168.1.1/16, 192.168.0.6-9, 192.168.0.1/24")
+  iex> Cider.to_string(optimized)
+  "192.168.0.0/16"
+  ```
+
+  ```elixir
+  iex> {:ok, optimized} = Cider.optimize("192.168.0.1-5, 192.168.0.10-20, 192.168.0.6-9")
+  iex> Cider.to_string(optimized)
+  "192.168.0.1-20"
+  ```
+
+  ```elixir
+  iex> {:ok, optimized} = Cider.optimize("192.168.0.1-5, 192.168.0.10-20, 192.168.0.6-9, 192.168.0.0/31, 192.168.1.0/31")
+  iex> Cider.to_string(optimized)
+  "192.168.0.0-20, 192.168.1.0/31"
+  ```
+  """
+  @spec optimize(String.t() | list) ::
+          {:ok, [t]} | {:error, :invalid_whitelist | :invalid_whitelist_cidr}
+  def optimize(whitelist) when is_binary(whitelist) do
+    with {:ok, wl} <- whitelist(whitelist), do: optimize(wl)
+  end
+
+  def optimize(whitelist) do
+    whitelist = whitelist |> Enum.sort_by(&is_tuple/1) |> Enum.reverse()
+
+    case merge_overlapping(whitelist, []) do
+      {:overlap, ips} -> optimize(ips)
+      {:no_overlap, ips} -> {:ok, ips |> Enum.map(&range_to_cider/1) |> Enum.sort(&sort_cidr/2)}
+    end
+  end
+
+  @spec sort_cidr(t, t) :: boolean
+  defp sort_cidr({_, a}, {_, b}), do: a < b
+  defp sort_cidr({_, a}, b), do: cidr_count(a) > Enum.count(b)
+  defp sort_cidr(a, {_, b}), do: Enum.count(a) > cidr_count(b)
+  defp sort_cidr(a, b), do: Enum.count(a) > Enum.count(b)
+
+  @spec cidr_count(integer) :: integer
+  defp cidr_count(mask) when mask > 0xFFFFFFFF,
+    do: :erlang.bxor(mask, 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF)
+
+  defp cidr_count(mask), do: :erlang.bxor(mask, 0xFFFFFFFF)
+
+  @spec merge_overlapping([t], [t]) :: {:overlap, [t]} | {:no_overlap, [t]}
+  defp merge_overlapping([], acc), do: {:no_overlap, acc}
+
+  defp merge_overlapping([ip | ips], acc) do
+    case merge_overlap(ip, ips, []) do
+      {:overlap, overlap} -> {:overlap, overlap ++ acc}
+      {:no_overlap, ips} -> merge_overlapping(ips, [ip | acc])
+    end
+  end
+
+  @spec merge_overlap(t, [t], [t]) :: {:overlap, [t]} | {:no_overlap, [t]}
+  defp merge_overlap(_, [], acc), do: {:no_overlap, acc}
+
+  defp merge_overlap(ip, [potential | ips], acc) do
+    case overlap?(ip, potential) do
+      :no_overlap -> merge_overlap(ip, ips, [potential | acc])
+      {:overlap, new} -> {:overlap, ips ++ [new | acc]}
+    end
+  end
+
+  @spec overlap?(t, t) :: {:overlap, t} | :no_overlap
+  defp overlap?(a..b, c..d) do
+    cond do
+      a + 1 < c and b + 1 < c -> :no_overlap
+      c + 1 < a and d + 1 < a -> :no_overlap
+      :overlap -> {:overlap, min(a, c)..max(b, d)}
+    end
+  end
+
+  defp overlap?(cidr = {_, _}, c..d) do
+    cond do
+      Enum.all?(c..d, &Cider.contains?(&1, cidr)) -> {:overlap, cidr}
+      range = cidr_to_range(cidr) -> overlap?(range, c..d)
+      :no_overlap -> :no_overlap
+    end
+  end
+
+  defp overlap?(c..d, {a, b}), do: overlap?({a, b}, c..d)
+
+  defp overlap?({a, b}, {c, d}) do
+    cond do
+      b <= d and Cider.contains?(c, {a, b}) -> {:overlap, {a, b}}
+      d <= b and Cider.contains?(a, {c, d}) -> {:overlap, {c, d}}
+      :no_overlap -> :no_overlap
+    end
+  end
+
+  @spec mask_to_string(integer) :: String.t()
+  Enum.each(0..32, fn shift ->
+    defp mask_to_string(unquote(0xFFFFFFFF |> :erlang.bsr(shift) |> :erlang.bsl(shift))),
+      do: unquote(to_string(32 - shift))
+  end)
+
+  Enum.each(0..127, fn shift ->
+    defp mask_to_string(
+           unquote(0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF |> :erlang.bsr(shift) |> :erlang.bsl(shift))
+         ),
+         do: unquote(to_string(128 - shift))
+  end)
+
+  @spec cidr_to_range(t) :: t | nil
+  defp cidr_to_range({ip, mask}) when mask > 0xFFFFFF00 do
+    ip..(ip + :erlang.bxor(0xFFFFFFFF, mask))
+  end
+
+  defp cidr_to_range(_), do: nil
+
+  @spec range_to_cider(t) :: t
+  defp range_to_cider(a..b) do
+    mask = Integer.to_string(b - a, 2)
+
+    if mask =~ ~r/^1{1,8}+$/ do
+      {a, create_mask(32 - String.length(mask), :ipv4)}
+    else
+      a..b
+    end
+  end
+
+  defp range_to_cider(a), do: a
 end

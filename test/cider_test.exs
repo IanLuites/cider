@@ -135,4 +135,31 @@ defmodule CiderTest do
       refute Cider.whitelisted?(3_232_236_055, whitelist)
     end
   end
+
+  defp optimize(value), do: value |> Cider.optimize!() |> Cider.to_string()
+
+  describe "optimize/1" do
+    test "sorts based on range, largest first" do
+      assert optimize("192.168.0.1,192.168.1.0/24,192.168.2.3-6") ==
+               "192.168.1.0/24, 192.168.2.3/30, 192.168.0.1/32"
+
+      assert optimize("192.168.0.1-5,192.168.0.21-41, 192.168.0.11-16") ==
+               "192.168.0.21-41, 192.168.0.11-16, 192.168.0.1-5"
+
+      assert optimize("192.168.2.0/31, 192.168.0.0/28, 192.168.1.0/30") ==
+               "192.168.0.0/28, 192.168.1.0/30, 192.168.2.0/31"
+
+      assert optimize("192.168.2.0/31, ::ffff:ffff:ffff/128, 192.168.1.0/30") ==
+               "192.168.1.0/30, 192.168.2.0/31, 0:0:0:0:0:FFFF:FFFF:FFFF/128"
+
+      assert optimize("192.168.2.0-5, ::ffff:ffff:ffff/100, 192.168.1.0/30") ==
+               "0:0:0:0:0:FFFF:F000:0/100, 192.168.2.0-5, 192.168.1.0/30"
+    end
+  end
+
+  describe "optimize!/1" do
+    test "raise on failure" do
+      assert_raise RuntimeError, fn -> optimize(":1") end
+    end
+  end
 end
