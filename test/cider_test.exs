@@ -162,4 +162,59 @@ defmodule CiderTest do
       assert_raise RuntimeError, fn -> optimize(":1") end
     end
   end
+
+  describe "blacklist" do
+    defp blacklist(whitelist, cidr) do
+      assert new = Cider.blacklist(whitelist, cidr)
+      Cider.to_string(new)
+    end
+
+    test "range - range" do
+      # Disjoint
+      assert blacklist("192.168.0.9-21", "192.168.0.25-35") == "192.168.0.9-21"
+
+      # Inside
+      assert blacklist("192.168.0.9-21", "192.168.0.14-18") == "192.168.0.9-13, 192.168.0.19-21"
+
+      # Outside
+      assert blacklist("192.168.0.9-21", "192.168.0.9-22") == ""
+
+      # Lower
+      assert blacklist("192.168.0.9-21", "192.168.0.5-15") == "192.168.0.16-21"
+
+      # Higher
+      assert blacklist("192.168.0.9-20", "192.168.0.15-25") == "192.168.0.9-14"
+
+      # Sneakies
+      assert blacklist("192.168.0.9-21", "192.168.0.5-20") == "192.168.0.21/32"
+      assert blacklist("192.168.0.9-20", "192.168.0.10-25") == "192.168.0.9/32"
+      assert blacklist("192.168.0.9-20", "192.168.0.10-19") == "192.168.0.9/32, 192.168.0.20/32"
+    end
+
+    test "cidr - cidr" do
+      # Disjoint
+      assert blacklist("10.0.0.0/16", "10.1.0.0/16") == "10.0.0.0/16"
+      assert blacklist("10.0.0.0/16", "10.1.0.0/24") == "10.0.0.0/16"
+      assert blacklist("10.0.0.0/24", "10.1.0.0/16") == "10.0.0.0/24"
+
+      # Outside
+      assert blacklist("192.168.1.0/24", "192.168.0.0/16") == ""
+
+      # Inside
+      assert blacklist("192.168.0.0/16", "192.168.0.0/24") ==
+               "192.168.128.0/17, 192.168.64.0/18, 192.168.32.0/19, 192.168.16.0/20, 192.168.8.0/21, 192.168.4.0/22, 192.168.2.0/23, 192.168.1.0/24"
+
+      assert blacklist("192.168.0.0/16", "192.168.1.0/24") ==
+               "192.168.128.0/17, 192.168.64.0/18, 192.168.32.0/19, 192.168.16.0/20, 192.168.8.0/21, 192.168.4.0/22, 192.168.2.0/23, 192.168.0.0/24"
+    end
+
+    test "range - cidr" do
+      assert blacklist("192.168.0.9-21", "192.168.0.14/31") == "192.168.0.16-21, 192.168.0.9-13"
+    end
+
+    test "cidr - range" do
+      assert blacklist("192.168.0.0/24", "192.168.0.5-32") ==
+               "192.168.0.128/25, 192.168.0.64/26, 192.168.0.32/27, 192.168.0.0-4"
+    end
+  end
 end

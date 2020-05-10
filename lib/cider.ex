@@ -349,6 +349,91 @@ defmodule Cider do
   def whitelist(wl, cidr) when is_binary(wl), do: whitelist(whitelist!(wl), cidr)
   def whitelist(wl, cidr), do: optimize!([cidr | wl])
 
+  @spec blacklist(binary | [t], binary | t) :: [t]
+  def blacklist(whitelist, cidr)
+  def blacklist(whitelist, cidr) when is_binary(cidr), do: blacklist(whitelist, parse(cidr))
+
+  def blacklist(whitelist, cidr) when is_binary(whitelist),
+    do: blacklist(optimize!(whitelist), cidr)
+
+  def blacklist(whitelist, cidr) do
+    whitelist
+    |> Enum.flat_map(&remove(&1, cidr))
+    |> optimize!
+  end
+
+  @spec remove(t, t) :: [t]
+  defp remove(same, same), do: []
+
+  # range - range
+  defp remove(white = a..b, black = x..y) do
+    if Range.disjoint?(white, black) do
+      [white]
+    else
+      cond do
+        a >= x and b <= y -> []
+        a >= x and b > y -> [fix_range((y + 1)..b)]
+        a < x and b > y -> [fix_range(a..(x - 1)), fix_range((y + 1)..b)]
+        a < x and b < y -> [fix_range(a..(x - 1))]
+      end
+    end
+  end
+
+  # CIDR - CIDR
+  defp remove(white = {a, b}, black = {x, y}) do
+    mask = min(b, y)
+
+    cond do
+      :erlang.band(a, mask) != :erlang.band(x, mask) -> [white]
+      b >= y -> []
+      b < y -> cider_sub(white, black)
+    end
+  end
+
+  # range - CIDR
+  defp remove(white = _.._, black = {_, _}), do: remove(white, to_range(black))
+
+  # CIDR - range
+  defp remove(cidr, range = a..b) do
+    case range_to_cider(range) do
+      black = {_, _} ->
+        cider_sub(cidr, black)
+
+      _ ->
+        diff_bits = trunc(Float.ceil(:math.log2(b - a)))
+        mask = 0xFFFFFFFF |> :erlang.bsl(diff_bits) |> :erlang.band(0xFFFFFFFF)
+        black = {:erlang.band(a, mask), mask}
+        cider_sub(cidr, black) ++ remove(cidr_to_range(black), range)
+    end
+  end
+
+  def cider_sub({a, b}, {x, y}) do
+    diff_mask = :erlang.bxor(b, y)
+    diff_inv = x |> :erlang.bxor(diff_mask) |> :erlang.band(diff_mask)
+    branch_inv = a |> :erlang.band(b) |> :erlang.bor(diff_inv)
+
+    mask_tree(a, branch_inv, y, b)
+  end
+
+  defp mask_tree(original, ip, from, to, acc \\ [])
+  defp mask_tree(_original, _ip, from, to, acc) when from == to, do: acc
+
+  defp mask_tree(original, ip, from, to, acc) do
+    new = from |> :erlang.bsl(1) |> :erlang.band(0xFFFFFFFF)
+    inverse = :erlang.band(original, new) + :erlang.band(ip, :erlang.bxor(from, new))
+
+    mask_tree(original, ip, new, to, [{inverse, from} | acc])
+  end
+
+  defp fix_range(a..a), do: {a, 4_294_967_295}
+  defp fix_range(r), do: r
+
+  @spec to_range(t | binary) :: Range.t()
+  def to_range(cidr)
+  def to_range(cidr) when is_binary(cidr), do: to_range(parse(cidr))
+  def to_range(r = _.._), do: r
+  def to_range(cidr), do: cidr_to_range(cidr)
+
   @doc ~S"""
   Optimize a Cider whitelist by merging overlapping CIDR.
 
