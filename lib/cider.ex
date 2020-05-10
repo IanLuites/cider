@@ -265,6 +265,25 @@ defmodule Cider do
   @doc ~S"""
   Generate an IP whitelist.
 
+  See: `whitelist/1`.
+
+  ## Example
+
+  ```elixir
+  iex> Cider.whitelist!("192.168.0.1-3, 192.168.1.0/32")
+  [{3232235776, 4294967295}, 3232235521..3232235523]
+  ```
+  """
+  @spec whitelist!(String.t() | [String.t() | t]) :: [t]
+  def whitelist!(whitelist) do
+    case whitelist(whitelist) do
+      {:ok, wl} -> wl
+      {:error, reason} -> raise "Failed to whitelist. (#{reason})"
+    end
+  end
+
+  @doc ~S"""
+  Generate an IP whitelist.
 
   ## Examples
 
