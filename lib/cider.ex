@@ -343,6 +343,12 @@ defmodule Cider do
 
   def whitelisted?(ip, whitelist), do: ip |> ip! |> whitelisted?(whitelist)
 
+  @spec whitelist(binary | [t], binary | t) :: [t]
+  def whitelist(whitelist, cidr)
+  def whitelist(wl, cidr) when is_binary(cidr), do: whitelist(wl, parse(cidr))
+  def whitelist(wl, cidr) when is_binary(wl), do: whitelist(whitelist!(wl), cidr)
+  def whitelist(wl, cidr), do: optimize!([cidr | wl])
+
   @doc ~S"""
   Optimize a Cider whitelist by merging overlapping CIDR.
 
