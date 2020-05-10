@@ -403,10 +403,13 @@ defmodule Cider do
   end
 
   @spec sort_cidr(t, t) :: boolean
-  defp sort_cidr({_, a}, {_, b}), do: a < b
-  defp sort_cidr({_, a}, b), do: cidr_count(a) > Enum.count(b)
-  defp sort_cidr(a, {_, b}), do: Enum.count(a) > cidr_count(b)
-  defp sort_cidr(a, b), do: Enum.count(a) > Enum.count(b)
+  defp sort_cidr({x, a}, {y, b}), do: a < b or (a == b and x < y)
+  defp sort_cidr({x, a}, b = y.._), do: sort(cidr_count(a), Enum.count(b), x, y)
+  defp sort_cidr(a = x.._, {y, b}), do: sort(Enum.count(a), cidr_count(b), x, y)
+  defp sort_cidr(a = x.._, b = y.._), do: sort(Enum.count(a), Enum.count(b), x, y)
+
+  @spec sort(integer, integer, integer, integer) :: boolean
+  defp sort(count_a, count_b, x, y), do: count_a > count_b or (count_a == count_b and x < y)
 
   @spec cidr_count(integer) :: integer
   defp cidr_count(mask) when mask > 0xFFFFFFFF,
