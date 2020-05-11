@@ -9,7 +9,7 @@ install:
   - mix local.hex --force
   - mix deps.get
 script:
-  - mix analyze --non-interactive
+  - mix analyze --no-dialyzer --non-interactive
 after_script:
   - MIX_ENV=test mix do deps.get, compile, coveralls.travis
 cache:
