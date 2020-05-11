@@ -59,8 +59,7 @@ defmodule Cider.Mixfile do
   defp deps do
     [
       # Testing, documentation, and releases
-      {:analyze, "~> 0.1.3", optional: true, runtime: false, only: [:dev, :test]},
-      {:dialyxir, "~> 1.0.0-rc.4", optional: true, runtime: false, only: [:dev]}
+      {:analyze, "~> 0.1.12", optional: true, runtime: false, only: [:dev, :test]}
     ]
   end
 end

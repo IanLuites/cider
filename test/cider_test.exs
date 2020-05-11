@@ -213,6 +213,8 @@ defmodule CiderTest do
     end
 
     test "cidr - range" do
+      assert blacklist("192.168.0.0/24", "192.168.0.0-255") == ""
+
       assert blacklist("192.168.0.0/24", "192.168.0.5-32") ==
                "192.168.0.128/25, 192.168.0.64/26, 192.168.0.32/27, 192.168.0.0-4"
     end

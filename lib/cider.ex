@@ -272,6 +272,9 @@ defmodule Cider do
   ```elixir
   iex> Cider.whitelist!("192.168.0.1-3, 192.168.1.0/32")
   [{3232235776, 4294967295}, 3232235521..3232235523]
+
+  iex> Cider.whitelist!("flurp")
+  ** (RuntimeError) Failed to whitelist. (invalid_whitelist_cidr)
   ```
   """
   @spec whitelist!(String.t() | [String.t() | t]) :: [t]
@@ -343,12 +346,40 @@ defmodule Cider do
 
   def whitelisted?(ip, whitelist), do: ip |> ip! |> whitelisted?(whitelist)
 
+  @doc ~S"""
+  Add a CIDR or range to a IP whitelist.
+
+  ## Example
+
+  ```elixir
+  iex> wl = Cider.whitelist([], "192.168.0.0-23")
+  iex> Cider.to_string(wl)
+  "192.168.0.0-23"
+  iex> wl = Cider.whitelist(wl, "192.168.0.24-31")
+  iex> Cider.to_string(wl)
+  "192.168.0.0/27"
+  ```
+  """
   @spec whitelist(binary | [t], binary | t) :: [t]
   def whitelist(whitelist, cidr)
   def whitelist(wl, cidr) when is_binary(cidr), do: whitelist(wl, parse(cidr))
   def whitelist(wl, cidr) when is_binary(wl), do: whitelist(whitelist!(wl), cidr)
   def whitelist(wl, cidr), do: optimize!([cidr | wl])
 
+  @doc ~S"""
+  Remove a CIDR or range from a IP whitelist.
+
+  ## Example
+
+  ```elixir
+  iex> wl = Cider.whitelist("192.168.0.0/24", "8.8.8.4-8")
+  iex> Cider.to_string(wl)
+  "192.168.0.0/24, 8.8.8.4-8"
+  iex> wl = Cider.blacklist(wl, "192.168.0.5-32")
+  iex> Cider.to_string(wl)
+  "192.168.0.128/25, 192.168.0.64/26, 192.168.0.32/27, 8.8.8.4-8, 192.168.0.0-4"
+  ```
+  """
   @spec blacklist(binary | [t], binary | t) :: [t]
   def blacklist(whitelist, cidr)
   def blacklist(whitelist, cidr) when is_binary(cidr), do: blacklist(whitelist, parse(cidr))
@@ -366,16 +397,14 @@ defmodule Cider do
   defp remove(same, same), do: []
 
   # range - range
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp remove(white = a..b, black = x..y) do
-    if Range.disjoint?(white, black) do
-      [white]
-    else
-      cond do
-        a >= x and b <= y -> []
-        a >= x and b > y -> [fix_range((y + 1)..b)]
-        a < x and b > y -> [fix_range(a..(x - 1)), fix_range((y + 1)..b)]
-        a < x and b < y -> [fix_range(a..(x - 1))]
-      end
+    cond do
+      Range.disjoint?(white, black) -> [white]
+      a >= x and b <= y -> []
+      a >= x and b > y -> [fix_range((y + 1)..b)]
+      a < x and b > y -> [fix_range(a..(x - 1)), fix_range((y + 1)..b)]
+      a < x and b < y -> [fix_range(a..(x - 1))]
     end
   end
 
@@ -391,7 +420,7 @@ defmodule Cider do
   end
 
   # range - CIDR
-  defp remove(white = _.._, black = {_, _}), do: remove(white, to_range(black))
+  defp remove(white = _.._, black = {_, _}), do: remove(white, cidr_to_range(black))
 
   # CIDR - range
   defp remove(cidr, range = a..b) do
@@ -407,7 +436,7 @@ defmodule Cider do
     end
   end
 
-  def cider_sub({a, b}, {x, y}) do
+  defp cider_sub({a, b}, {x, y}) do
     diff_mask = :erlang.bxor(b, y)
     diff_inv = x |> :erlang.bxor(diff_mask) |> :erlang.band(diff_mask)
     branch_inv = a |> :erlang.band(b) |> :erlang.bor(diff_inv)
@@ -427,12 +456,6 @@ defmodule Cider do
 
   defp fix_range(a..a), do: {a, 4_294_967_295}
   defp fix_range(r), do: r
-
-  @spec to_range(t | binary) :: Range.t()
-  def to_range(cidr)
-  def to_range(cidr) when is_binary(cidr), do: to_range(parse(cidr))
-  def to_range(r = _.._), do: r
-  def to_range(cidr), do: cidr_to_range(cidr)
 
   @doc ~S"""
   Optimize a Cider whitelist by merging overlapping CIDR.

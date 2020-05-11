@@ -1,9 +1,9 @@
 sudo: false
 language: elixir
 elixir:
-  - 1.8.1
+  - 1.10.2
 otp_release:
-  - 21.3
+  - 22.2
 install:
   - mix local.rebar --force
   - mix local.hex --force
