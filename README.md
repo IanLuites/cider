@@ -45,6 +45,11 @@ end
 
 ## Changelog
 
+### v0.3.3 (2020-05-10)
+
+- Add function to add CIDR or range to whitelist. (`Cider.whitelist/2`)
+- Add function to remove CIDR or range from whitelist. (`Cider.blacklist/2`)
+
 ### v0.3.1 (2019-05-10)
 
 - Add function to optimize whitelists. (`Cider.optimize/1`)

@@ -4,7 +4,7 @@ defmodule Cider.Mixfile do
   def project do
     [
       app: :cider,
-      version: "0.3.1",
+      version: "0.3.3",
       elixir: "~> 1.8",
       description: "CIDR library for Elixer.",
       package: package(),
